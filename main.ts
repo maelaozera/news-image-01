@@ -1,30 +1,60 @@
-// news-image-01 entry (Node 22, standard library only).
-// The image beside this file is the entry: a newspaper front page
-// summing up the world's news of Friday 13 November 2026 — Senate
-// summons Huang & Lutnick, Zelensky meets US envoys, a drone hits a
-// Russian warship, Iran claims a strike in Bahrain, the FBI's North
-// Korea $400m crypto hack, Kane's England caps record, and the US
-// record 483,200 deportations — around a central globe. The program
-// copies it, byte for byte, to /output/entry.png so the judge sees
-// exactly those bytes.
-//
-// Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for
-// /output:
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+import { createHash } from "node:crypto";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { copyFileSync, mkdirSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+const IMAGE_NAME = "entry.png";
+const OUTPUT_DIR_ENV = "MAKEFUN_OUTPUT_DIR";
+const FALLBACK_OUTPUT_DIR = "/output";
 
-const source = new URL('./entry.png', import.meta.url);
-const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-const target = join(outDir, 'entry.png');
-
-mkdirSync(dirname(target), { recursive: true });
-copyFileSync(source, target);
-
-// The copy must be exact: the judge sees these bytes, and the entry
-// runs twice, so both runs have to write the same file. Refuse to
-// finish quietly if the sizes ever disagree.
-if (statSync(source).size !== statSync(target).size) {
-  throw new Error('entry.png copy is incomplete');
+function fingerprint(filePath: string): string {
+  const hasher = createHash("sha256");
+  hasher.update(readFileSync(filePath));
+  return hasher.digest("hex");
 }
+
+function run(): void {
+  const scriptDir = dirname(fileURLToPath(import.meta.url));
+  const origin = resolve(scriptDir, IMAGE_NAME);
+  const destinationDir = resolve(
+    process.env[OUTPUT_DIR_ENV] ?? FALLBACK_OUTPUT_DIR,
+  );
+  const destination = join(destinationDir, IMAGE_NAME);
+
+  if (!existsSync(origin)) {
+    throw new Error(`Source image not found: ${origin}`);
+  }
+  const originSize = statSync(origin).size;
+  if (originSize === 0) {
+    throw new Error(`Source image is empty: ${origin}`);
+  }
+
+  mkdirSync(destinationDir, { recursive: true });
+  copyFileSync(origin, destination);
+
+  const originFingerprint = fingerprint(origin);
+  const destinationFingerprint = fingerprint(destination);
+  if (originFingerprint !== destinationFingerprint) {
+    throw new Error(
+      `Copy verification failed: ${originFingerprint} != ${destinationFingerprint}`,
+    );
+  }
+  const destinationSize = statSync(destination).size;
+  if (destinationSize !== originSize) {
+    throw new Error(
+      `Size mismatch after copy: ${originSize} != ${destinationSize}`,
+    );
+  }
+
+  console.log(
+    `Copied ${IMAGE_NAME} to ${destination} (sha256 ${destinationFingerprint})`,
+  );
+}
+
+run();
